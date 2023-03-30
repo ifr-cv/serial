@@ -264,6 +264,54 @@ public:
   size_t
   read (uint8_t *buffer, size_t size);
 
+  /// @brief 读取一个结构体
+  template<class T>
+  size_t readT(T &t){ return read(reinterpret_cast< uint8_t * >(&t), sizeof(T)); }
+
+    /**
+     * @brief 读取一个结构体
+     * @param offset 偏移的字节数
+     */
+    template<class T>
+    size_t readT(T &t,size_t &offset){ return read(reinterpret_cast< uint8_t * >(&t) + offset, sizeof(T) - offset); }
+
+    /**
+     * @brief 读取一个结构体. 如果检查不通过, 则重新尝试读取
+     * @details
+     * @tparam max_try 最大尝试读取次数, 0为永远尝试, 1为仅读取一次
+     * @tparam T 结构体类型
+     * @tparam HEAD 头帧
+     * @param device 串口
+     * @param src 结构体引用
+     * @return 读取是否成功
+     */
+    template<size_t max_try = 1, class T, uint8_t HEAD = T::HEAD>
+    bool sp_readCheckT(T &src) {
+        constexpr const auto max_try_byte = (max_try > 0 ? (max_try - 1) : 0) * sizeof(T);
+
+        if (readT(src) != sizeof (src))return false;
+        if (src.check())return true;
+        if constexpr (max_try == 1)return false;
+
+        auto *const ptr = reinterpret_cast<uint8_t *>(&src);
+        size_t try_byte = 1;//已尝试的字节数
+
+        do {
+            for (size_t i = 1; i < sizeof(T); i++) {//尝试对齐HEAD
+                if (max_try && ++try_byte > max_try_byte)return false;
+                if (*(ptr + i) == HEAD) {
+                    memmove(&src, ptr + i, sizeof(T) - i);
+                    if (read(ptr + sizeof(T) - i, i) != i)return false;
+                    if (src.check())return true;
+                    i = 0;//reset
+                }
+            }
+            //重新读取
+            if (readT(src) != sizeof (src))return false;
+            if (src.check())return true;
+        } while (true);
+    }
+
   /*! Read a given amount of bytes from the serial port into a give buffer.
    *
    * \param buffer A reference to a std::vector of uint8_t.
@@ -370,6 +418,17 @@ public:
    */
   size_t
   write (const uint8_t *data, size_t size);
+
+    ///@brief 写出一个结构体
+    template<class T>
+    size_t writeT(const T &data) { return write(reinterpret_cast< const uint8_t * >(&data), sizeof(T)); }
+
+    /**
+     * @brief 写出一个结构体
+     * @param offset 偏移的字节数
+     */
+    template<class T>
+    size_t writeT(const T &data, size_t offset) { return write(reinterpret_cast< uint8_t * >(data) + offset, sizeof(T) - offset); }
 
   /*! Write a string to the serial port.
    *
